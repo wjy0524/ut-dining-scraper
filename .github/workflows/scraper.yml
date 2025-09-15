@@ -27,4 +27,6 @@ jobs:
           echo "$FIREBASE_SERVICE_ACCOUNT" > serviceAccountKey.json
 
       - name: Run scraper
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node index.js

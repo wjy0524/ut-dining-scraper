@@ -1,3 +1,7 @@
+process.env.NODE_NO_WARNINGS = "1";
+global.ReadableStream = require("stream/web").ReadableStream;
+global.File = class {}; // dummy shim
+
 const axios = require("axios");
 const cheerio = require("cheerio");
 const admin = require("firebase-admin");

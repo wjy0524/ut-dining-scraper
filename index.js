@@ -24,25 +24,38 @@ async function scrapeMenu(url) {
   const $ = cheerio.load(data);
 
   let currentMeal = null;
-  const menu = { breakfast: [], lunch: [], dinner: [] };
+  let currentCategory = null;
 
-  $("div.shortmenumeals, div.shortmenurecipes").each((i, el) => {
+  const menu = {
+    breakfast: [],
+    lunch: [],
+    dinner: []
+  };
+
+  $("b, div.shortmenurecipes").each((i, el) => {
     const text = $(el).text().trim();
+    if (!text || text === "\u00a0") return;
 
-    // 🍳 식사 종류 감지
-    if (/Breakfast/i.test(text)) {
+    // 어떤 끼니인지 판별
+    if (text.includes("Breakfast")) {
       currentMeal = "breakfast";
-    } else if (/Lunch/i.test(text)) {
+      currentCategory = null;
+    } else if (text.includes("Lunch")) {
       currentMeal = "lunch";
-    } else if (/Dinner/i.test(text)) {
+      currentCategory = null;
+    } else if (text.includes("Dinner")) {
       currentMeal = "dinner";
-    }
-
-    // 🥗 메뉴 아이템 수집
-    else if ($(el).hasClass("shortmenurecipes") && currentMeal) {
-      if (text && text !== "\u00a0") {  // &nbsp; 필터링
-        menu[currentMeal].push(text);
-      }
+      currentCategory = null;
+    } 
+    // 카테고리 ( -- Something -- )
+    else if (text.startsWith("--") && currentMeal) {
+      const categoryName = text.replace(/--/g, "").trim();
+      currentCategory = { category: categoryName, items: [] };
+      menu[currentMeal].push(currentCategory);
+    } 
+    // 음식 아이템
+    else if ($(el).hasClass("shortmenurecipes") && currentMeal && currentCategory) {
+      currentCategory.items.push(text);
     }
   });
 

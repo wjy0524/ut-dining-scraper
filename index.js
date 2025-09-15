@@ -26,14 +26,23 @@ async function scrapeMenu(url) {
   let currentMeal = null;
   const menu = { breakfast: [], lunch: [], dinner: [] };
 
-  $("b, div.shortmenurecipes").each((i, el) => {
+  $("div.shortmenumeals, div.shortmenurecipes").each((i, el) => {
     const text = $(el).text().trim();
 
-    if (text.includes("Breakfast")) currentMeal = "breakfast";
-    else if (text.includes("Lunch")) currentMeal = "lunch";
-    else if (text.includes("Dinner")) currentMeal = "dinner";
+    // 🍳 식사 종류 감지
+    if (/Breakfast/i.test(text)) {
+      currentMeal = "breakfast";
+    } else if (/Lunch/i.test(text)) {
+      currentMeal = "lunch";
+    } else if (/Dinner/i.test(text)) {
+      currentMeal = "dinner";
+    }
+
+    // 🥗 메뉴 아이템 수집
     else if ($(el).hasClass("shortmenurecipes") && currentMeal) {
-      menu[currentMeal].push(text);
+      if (text && text !== "\u00a0") {  // &nbsp; 필터링
+        menu[currentMeal].push(text);
+      }
     }
   });
 

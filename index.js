@@ -6,8 +6,8 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const admin = require("firebase-admin");
 
-// GitHub Secret에서 서비스 계정 키 로드
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+// 🔑 GitHub Actions에서 만든 JSON 파일 불러오기
+const serviceAccount = require("./serviceAccountKey.json");
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),

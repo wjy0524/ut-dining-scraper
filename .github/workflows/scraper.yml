@@ -3,7 +3,7 @@ name: Daily Dining Scraper
 on:
   schedule:
     - cron: "0 12 * * *" # 매일 12:00 UTC 실행 (Austin 시간 오전 7시)
-  workflow_dispatch: # 수동 실행도 가능
+  workflow_dispatch:
 
 jobs:
   scrape:
@@ -18,15 +18,13 @@ jobs:
           node-version: "20.11.1"
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Create Firebase key file
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: |
-          echo "$FIREBASE_SERVICE_ACCOUNT" > serviceAccountKey.json
+          echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > serviceAccountKey.json
 
       - name: Run scraper
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        run: node index.js
+        run: |
+          echo "🚀 Running UT Dining scraper..."
+          node index.js || (echo "❌ Scraper failed!" && exit 1)

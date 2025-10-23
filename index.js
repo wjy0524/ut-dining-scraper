@@ -1,6 +1,6 @@
 process.env.NODE_NO_WARNINGS = "1";
 global.ReadableStream = require("stream/web").ReadableStream;
-global.File = class {}; // dummy shim
+global.File = class {};
 
 const axios = require("axios");
 const cheerio = require("cheerio");
@@ -15,65 +15,114 @@ admin.initializeApp({
 const db = admin.firestore();
 
 const urls = {
-  J2_JCL: "https://hf-foodpro.austin.utexas.edu/foodpro/shortmenu.aspx?sName=University+Housing+and+Dining&locationNum=12&locationName=Jester+Dining%3a+J2+%26+JCL+Dining&naFlag=1",
-  Kins: "https://hf-foodpro.austin.utexas.edu/foodpro/shortmenu.aspx?sName=University+Housing+and+Dining&locationNum=03&locationName=Kins+Dining&naFlag=1",
+  J2_JCL:
+    "https://hf-foodpro.austin.utexas.edu/foodpro/shortmenu.aspx?sName=University+Housing+and+Dining&locationNum=12&locationName=Jester+Dining%3a+J2+%26+JCL+Dining&naFlag=1",
+  Kins:
+    "https://hf-foodpro.austin.utexas.edu/foodpro/shortmenu.aspx?sName=University+Housing+and+Dining&locationNum=03&locationName=Kins+Dining&naFlag=1",
 };
 
-
+// 🔹 텍스트 정리 함수
 function cleanText(str) {
   return str.replace(/\s+/g, " ").trim();
 }
 
+// 🔹 임시 영양 / 알러지 / 태그 생성 (나중에 실제 크롤링으로 대체)
+function generateDummyDetails(name) {
+  const allergens = ["Egg", "Milk", "Peanut", "Wheat", "Soy"];
+  const tags = ["Vegan", "Vegetarian", "Halal"];
+
+  return {
+    nutrition: {
+      calories: Math.floor(Math.random() * 300) + 100,
+      protein: (Math.random() * 20).toFixed(1),
+      fat: (Math.random() * 10).toFixed(1),
+      carbs: (Math.random() * 40).toFixed(1),
+    },
+    allergens: allergens.filter(() => Math.random() < 0.3),
+    tags: tags.filter(() => Math.random() < 0.4),
+    ingredients: `${name} ingredients placeholder.`,
+  };
+}
+
+// 🔹 메뉴 페이지 스크래핑
 async function scrapeMenu(url) {
   const { data } = await axios.get(url);
   const $ = cheerio.load(data);
 
   let currentMeal = null;
-  const menu = { breakfast: [], lunch: [], dinner: [] };
+  let currentCategory = null;
+  const menu = { breakfast: {}, lunch: {}, dinner: {} };
 
-  $("td.shortmenumeals, div.shortmenumeals, div.shortmenucats, div.shortmenurecipes").each((i, el) => {
-    const rawText = $(el).text();
-    const text = cleanText(rawText);
+  $("td.shortmenumeals, div.shortmenumeals, div.shortmenucats, div.shortmenurecipes").each(
+    (i, el) => {
+      const text = cleanText($(el).text());
 
-    // 끼니 헤더
-    if (/^breakfast$/i.test(text)) {
-      currentMeal = "breakfast";
-      console.log("🍳 Switched to Breakfast");
-    } else if (/^lunch$/i.test(text)) {
-      currentMeal = "lunch";
-      console.log("🥗 Switched to Lunch");
-    } else if (/^dinner$/i.test(text)) {
-      currentMeal = "dinner";
-      console.log("🍽 Switched to Dinner");
+      // 🍳 끼니 전환
+      if (/^breakfast$/i.test(text)) currentMeal = "breakfast";
+      else if (/^lunch$/i.test(text)) currentMeal = "lunch";
+      else if (/^dinner$/i.test(text)) currentMeal = "dinner";
+
+      // 🍽 카테고리
+      else if ($(el).hasClass("shortmenucats") && currentMeal) {
+        currentCategory = text;
+        menu[currentMeal][currentCategory] = [];
+      }
+
+      // 🍔 음식 아이템
+      else if ($(el).hasClass("shortmenurecipes") && currentMeal && currentCategory) {
+        menu[currentMeal][currentCategory].push(text);
+      }
     }
-
-    // 카테고리
-    else if ($(el).hasClass("shortmenucats") && currentMeal) {
-      menu[currentMeal].push(`-- ${text} --`);
-    }
-
-    // 음식 아이템
-    else if ($(el).hasClass("shortmenurecipes") && currentMeal) {
-      menu[currentMeal].push(text);
-    }
-  });
+  );
 
   return menu;
 }
 
-
-
-
+// 🔹 Firestore에 저장
 async function run() {
   const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
   for (const [hall, url] of Object.entries(urls)) {
     const menu = await scrapeMenu(url);
+    const hallRef = db.collection("meals").doc(`${hall}_${today}`);
 
-    await db.collection("meals").doc(`${hall}_${today}`).set(menu);
+    const categoryMap = {};
 
-    console.log(`✅ Saved ${hall} menu for ${today}`);
-    console.log(menu); // 저장된 메뉴 확인
+    // 끼니별 → 카테고리별 → 아이템
+    for (const [mealType, categories] of Object.entries(menu)) {
+      for (const [categoryName, items] of Object.entries(categories)) {
+        const ids = [];
+
+        for (const item of items) {
+          // ✅ 안전한 Firestore 문서 ID
+          const safeID = item
+            .replace(/\//g, "_")
+            .replace(/[^\w\s-]/g, "")
+            .replace(/\s+/g, "_")
+            .toLowerCase();
+
+          const itemID = `${safeID}_${mealType}`;
+          ids.push(itemID);
+
+          const details = generateDummyDetails(item);
+          await hallRef.collection("food_items").doc(itemID).set({
+            name: item,
+            ...details,
+          });
+        }
+
+        // 🍱 카테고리별 item ID 리스트
+        categoryMap[`${mealType}_${categoryName}`] = ids;
+      }
+    }
+
+    // ✅ 최종 Firestore 저장 (DiningCategories 구조와 일치)
+    await hallRef.set({
+      categories: categoryMap,
+      updated_at: new Date().toISOString(),
+    });
+
+    console.log(`✅ Saved structured data for ${hall}`);
   }
 }
 

@@ -5,6 +5,7 @@ global.File = class {};
 const axios = require("axios");
 const cheerio = require("cheerio");
 const admin = require("firebase-admin");
+const cron = require("node-cron"); // ✅ 스케줄링 추가
 
 // 🔑 Firebase 서비스 계정 키
 const serviceAccount = require("./serviceAccountKey.json");
@@ -26,7 +27,7 @@ function cleanText(str) {
   return str.replace(/\s+/g, " ").trim();
 }
 
-// 🔹 임시 영양 / 알러지 / 태그 생성 (나중에 실제 크롤링으로 대체)
+// 🔹 임시 영양 / 알러지 / 태그 생성
 function generateDummyDetails(name) {
   const allergens = ["Egg", "Milk", "Peanut", "Wheat", "Soy"];
   const tags = ["Vegan", "Vegetarian", "Halal"];
@@ -126,8 +127,17 @@ async function run() {
   }
 }
 
+// ✅ 매일 자정(0시 0분)에 실행 (서버 로컬 시간 기준)
+cron.schedule("0 0 * * *", async () => {
+  console.log("🌙 Running daily dining scraper at midnight...");
+  await run();
+  console.log("✅ Upload completed for today");
+});
+
+// ✅ 앱 실행 시 즉시 한 번 실행 (테스트용)
 run().catch((err) => {
   console.error("❌ Error:", err);
   process.exit(1);
 });
+
 

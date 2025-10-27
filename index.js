@@ -1,13 +1,14 @@
+// 🚫 불필요한 경고 숨기기
 process.env.NODE_NO_WARNINGS = "1";
 global.ReadableStream = require("stream/web").ReadableStream;
 global.File = class {};
 
+// 🧩 의존성
 const axios = require("axios");
 const cheerio = require("cheerio");
 const admin = require("firebase-admin");
-const cron = require("node-cron"); // ✅ 스케줄링 추가
 
-// 🔑 Firebase 서비스 계정 키
+// 🔑 Firebase 서비스 계정 키 로드
 const serviceAccount = require("./serviceAccountKey.json");
 
 admin.initializeApp({
@@ -15,6 +16,7 @@ admin.initializeApp({
 });
 const db = admin.firestore();
 
+// 📍 스크래핑할 URL 목록
 const urls = {
   J2_JCL:
     "https://hf-foodpro.austin.utexas.edu/foodpro/shortmenu.aspx?sName=University+Housing+and+Dining&locationNum=12&locationName=Jester+Dining%3a+J2+%26+JCL+Dining&naFlag=1",
@@ -47,36 +49,41 @@ function generateDummyDetails(name) {
 
 // 🔹 메뉴 페이지 스크래핑
 async function scrapeMenu(url) {
-  const { data } = await axios.get(url);
-  const $ = cheerio.load(data);
+  try {
+    const { data } = await axios.get(url, { timeout: 15000 }); // 15초 제한
+    const $ = cheerio.load(data);
 
-  let currentMeal = null;
-  let currentCategory = null;
-  const menu = { breakfast: {}, lunch: {}, dinner: {} };
+    let currentMeal = null;
+    let currentCategory = null;
+    const menu = { breakfast: {}, lunch: {}, dinner: {} };
 
-  $("td.shortmenumeals, div.shortmenumeals, div.shortmenucats, div.shortmenurecipes").each(
-    (i, el) => {
-      const text = cleanText($(el).text());
+    $("td.shortmenumeals, div.shortmenumeals, div.shortmenucats, div.shortmenurecipes").each(
+      (i, el) => {
+        const text = cleanText($(el).text());
 
-      // 🍳 끼니 전환
-      if (/^breakfast$/i.test(text)) currentMeal = "breakfast";
-      else if (/^lunch$/i.test(text)) currentMeal = "lunch";
-      else if (/^dinner$/i.test(text)) currentMeal = "dinner";
+        // 🍳 끼니 전환
+        if (/^breakfast$/i.test(text)) currentMeal = "breakfast";
+        else if (/^lunch$/i.test(text)) currentMeal = "lunch";
+        else if (/^dinner$/i.test(text)) currentMeal = "dinner";
 
-      // 🍽 카테고리
-      else if ($(el).hasClass("shortmenucats") && currentMeal) {
-        currentCategory = text;
-        menu[currentMeal][currentCategory] = [];
+        // 🍽 카테고리
+        else if ($(el).hasClass("shortmenucats") && currentMeal) {
+          currentCategory = text;
+          menu[currentMeal][currentCategory] = [];
+        }
+
+        // 🍔 음식 아이템
+        else if ($(el).hasClass("shortmenurecipes") && currentMeal && currentCategory) {
+          menu[currentMeal][currentCategory].push(text);
+        }
       }
+    );
 
-      // 🍔 음식 아이템
-      else if ($(el).hasClass("shortmenurecipes") && currentMeal && currentCategory) {
-        menu[currentMeal][currentCategory].push(text);
-      }
-    }
-  );
-
-  return menu;
+    return menu;
+  } catch (error) {
+    console.error(`⚠️ Failed to scrape ${url}: ${error.message}`);
+    return {};
+  }
 }
 
 // 🔹 Firestore에 저장
@@ -84,6 +91,8 @@ async function run() {
   const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
   for (const [hall, url] of Object.entries(urls)) {
+    console.log(`🚀 Scraping data for ${hall}...`);
+
     const menu = await scrapeMenu(url);
     const hallRef = db.collection("meals").doc(`${hall}_${today}`);
 
@@ -95,7 +104,7 @@ async function run() {
         const ids = [];
 
         for (const item of items) {
-          // ✅ 안전한 Firestore 문서 ID
+          // ✅ Firestore-safe 문서 ID
           const safeID = item
             .replace(/\//g, "_")
             .replace(/[^\w\s-]/g, "")
@@ -127,17 +136,10 @@ async function run() {
   }
 }
 
-// ✅ 매일 자정(0시 0분)에 실행 (서버 로컬 시간 기준)
-cron.schedule("0 0 * * *", async () => {
-  console.log("🌙 Running daily dining scraper at midnight...");
+// ✅ 실행
+(async () => {
+  console.log("🏁 Running UT Dining scraper...");
   await run();
-  console.log("✅ Upload completed for today");
-});
-
-// ✅ 앱 실행 시 즉시 한 번 실행 (테스트용)
-run().catch((err) => {
-  console.error("❌ Error:", err);
-  process.exit(1);
-});
-
-
+  console.log("🎉 All dining halls processed successfully!");
+  process.exit(0); // ✅ GitHub Actions에서 프로세스 종료
+})();
